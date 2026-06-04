@@ -1,0 +1,20 @@
+# Blueprint de Render: crea el servicio web + la base PostgreSQL automáticamente.
+# En Render: New > Blueprint, conecta tu repo y se configura solo.
+services:
+  - type: web
+    name: conjointlab
+    runtime: python
+    plan: free            # cámbialo a "starter" (~$7/mes) para que no se duerma
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true          # Render genera una clave segura sola
+      - key: DATABASE_URL
+        fromDatabase:
+          name: conjoint-db
+          property: connectionString
+
+databases:
+  - name: conjoint-db
+    plan: free            # ojo: la base free de Render se elimina a los 90 días

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ConjointLab</title>
+  <link rel="stylesheet" href="/static/styles.css?v=5" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- LOGIN -->
+  <div id="view-login" class="login-wrap">
+    <div class="login-card">
+      <div class="brand"><span class="dot"></span> Conjoint<em>Lab</em></div>
+      <p class="muted" style="margin:10px 0 0; font-size:14px;">Diseña, aplica y analiza estudios conjoint.</p>
+      <div class="tabs">
+        <div class="tab on" id="tab-login" onclick="App.setAuthMode('login')">Entrar</div>
+        <div class="tab" id="tab-register" onclick="App.setAuthMode('register')">Crear cuenta</div>
+      </div>
+      <div id="reg-name-wrap" class="hidden"><label class="label">Nombre</label><input id="reg-name" placeholder="Tu nombre" /></div>
+      <div style="margin-top:10px;"><label class="label">Correo</label><input id="auth-email" type="email" placeholder="tu@correo.com" /></div>
+      <div style="margin-top:10px;"><label class="label">Contraseña</label><input id="auth-pass" type="password" placeholder="••••••" /></div>
+      <div class="err" id="auth-err"></div>
+      <button class="btn primary lg" style="width:100%; justify-content:center; margin-top:8px;" onclick="App.submitAuth()" id="auth-btn">Entrar</button>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="view-app" class="hidden">
+    <header class="bar">
+      <div class="brand" onclick="App.go('dashboard')"><span class="dot"></span> Conjoint<em>Lab</em></div>
+      <div class="bar-right">
+        <span id="user-name"></span>
+        <button class="icon-btn" title="Salir" onclick="App.logout()">⎋</button>
+      </div>
+    </header>
+    <main>
+      <div id="screen-dashboard"></div>
+      <div id="screen-editor" class="hidden"></div>
+      <div id="screen-results" class="hidden"></div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="/static/app.js?v=5"></script>
+</body>
+</html>
