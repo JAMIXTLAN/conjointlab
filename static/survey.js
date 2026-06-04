@@ -104,7 +104,13 @@
     root.innerHTML = `<div class="card" style="max-width:480px;margin:12vh auto 0;text-align:center">
       <div style="font-size:46px">✓</div>
       <h2 class="h">¡Gracias!</h2>
-      <p class="muted">Tus respuestas se guardaron correctamente.</p></div>`;
+      <p class="muted">Tus respuestas se guardaron correctamente.</p>
+      <button class="btn primary lg" style="margin-top:18px" onclick="window.__nueva()">Iniciar nueva entrevista →</button></div>`;
+    window.__nueva = () => {
+      phase = "demo"; step = 0; answers = {};
+      demo = { name: "", age: "", sex: "", municipality: "" };
+      load();  // pide tareas nuevas (otra combinación aleatoria) y muestra la pantalla inicial
+    };
   }
 
   load();
