@@ -111,3 +111,4 @@ def export_xlsx(study_id: str, user: models.User = Depends(auth.get_current_user
         bio, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{study.name}_resultados.xlsx"'},
     )
+
