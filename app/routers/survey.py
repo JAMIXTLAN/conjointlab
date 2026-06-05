@@ -53,3 +53,4 @@ def submit(token: str, data: schemas.SubmitIn, db: Session = Depends(get_db)):
     db.add(respondent)
     db.commit()
     return {"ok": True, "respondent_id": respondent.id}
+
