@@ -113,3 +113,4 @@ def preview_scenarios(study_id: str, count: int = Query(5, ge=1, le=50),
                           "tasks_per_respondent": count, "options_per_task": study.options_per_task})()
     return {"possible": analytics.total_possible(study.attributes),
             "tasks": analytics.generate_tasks(fake)}
+
