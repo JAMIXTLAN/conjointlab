@@ -32,6 +32,7 @@ class Study(Base):
     tasks_per_respondent = Column(Integer, default=8)    # tareas/pantallas por persona
     options_per_task = Column(Integer, default=3)        # opciones por pantalla
     public_token = Column(String, unique=True, index=True, default=_uuid)  # link público
+    profile_config = Column(Text, nullable=True)  # JSON con la config de campos de perfil
     created_at = Column(DateTime, default=datetime.utcnow)
 
     owner = relationship("User", back_populates="studies")
@@ -73,10 +74,19 @@ class Respondent(Base):
     id = Column(String, primary_key=True, default=_uuid)
     study_id = Column(String, ForeignKey("studies.id", ondelete="CASCADE"))
     name = Column(String, default="Anónimo")
-    operator = Column(String, default="")   # operador de campo que capturó
-    age = Column(String, default="")
+    operator = Column(String, default="")   # encuestador que capturó
+    # --- Sociodemográficos ---
     sex = Column(String, default="")
+    age_group = Column(String, default="")
+    occupation = Column(String, default="")
+    education = Column(String, default="")
+    # --- Territoriales ---
     municipality = Column(String, default="")
+    district = Column(String, default="")
+    electoral_section = Column(String, default="")
+    locality_zone = Column(String, default="")
+    # compatibilidad anterior
+    age = Column(String, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
 

@@ -1,9 +1,11 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+import json
 
 from ..database import get_db
 from .. import models, schemas, analytics
+from ..profile_defaults import DEFAULT_PROFILE, PROFILE_KEYS
 
 router = APIRouter(prefix="/api/survey", tags=["survey"])
 
@@ -20,7 +22,12 @@ def start(token: str, db: Session = Depends(get_db)):
     """Genera las tareas para un nuevo encuestado (aún no se guardan)."""
     study = _study_by_token(token, db)
     tasks = analytics.generate_tasks(study)
-    return {"study_id": study.id, "study_name": study.name, "tasks": tasks}
+    try:
+        cfg = json.loads(study.profile_config) if study.profile_config else DEFAULT_PROFILE
+    except Exception:
+        cfg = DEFAULT_PROFILE
+    return {"study_id": study.id, "study_name": study.name,
+            "profile_config": cfg, "tasks": tasks}
 
 
 @router.post("/{token}/submit")
@@ -29,12 +36,16 @@ def submit(token: str, data: schemas.SubmitIn, db: Session = Depends(get_db)):
     study = _study_by_token(token, db)
     chosen_by_task = {a.task_index: a.chosen_option_index for a in data.answers}
 
+    prof = data.profile or {}
     respondent = models.Respondent(
         study_id=study.id, name=data.name or "Anónimo",
         operator=data.operator or "",
-        age=data.age or "", sex=data.sex or "", municipality=data.municipality or "",
         completed_at=datetime.utcnow(),
     )
+    # mapea solo las llaves conocidas del perfil a sus columnas
+    for k in PROFILE_KEYS:
+        if k in prof and prof[k] is not None:
+            setattr(respondent, k, str(prof[k]))
     for task in data.tasks:
         inter = models.Interaction(
             task_index=task.task_index,
@@ -53,4 +64,3 @@ def submit(token: str, data: schemas.SubmitIn, db: Session = Depends(get_db)):
     db.add(respondent)
     db.commit()
     return {"ok": True, "respondent_id": respondent.id}
-

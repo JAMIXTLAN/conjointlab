@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+import json
 
 from ..database import get_db
 from .. import models, schemas, auth, analytics
+from ..profile_defaults import DEFAULT_PROFILE
 
 router = APIRouter(prefix="/api/studies", tags=["studies"])
 
@@ -12,12 +14,17 @@ def _serialize(study: models.Study, db: Session) -> dict:
         models.Respondent.study_id == study.id,
         models.Respondent.completed_at.isnot(None),
     ).count()
+    try:
+        cfg = json.loads(study.profile_config) if study.profile_config else DEFAULT_PROFILE
+    except Exception:
+        cfg = DEFAULT_PROFILE
     return {
         "id": study.id, "name": study.name,
         "num_respondents": study.num_respondents,
         "tasks_per_respondent": study.tasks_per_respondent,
         "options_per_task": study.options_per_task,
         "public_token": study.public_token,
+        "profile_config": cfg,
         "attributes": [
             {"id": a.id, "name": a.name,
              "categories": [{"id": c.id, "name": c.name} for c in a.categories]}
@@ -59,6 +66,7 @@ def create_study(data: schemas.StudyIn, user: models.User = Depends(auth.get_cur
     study = models.Study(
         owner_id=user.id, name=data.name, num_respondents=data.num_respondents,
         tasks_per_respondent=data.tasks_per_respondent, options_per_task=data.options_per_task,
+        profile_config=json.dumps(data.profile_config or DEFAULT_PROFILE, ensure_ascii=False),
     )
     for ai, a in enumerate(data.attributes):
         attr = models.Attribute(name=a.name, position=ai)
@@ -83,6 +91,8 @@ def update_study(study_id: str, data: schemas.StudyIn, user: models.User = Depen
     study.num_respondents = data.num_respondents
     study.tasks_per_respondent = data.tasks_per_respondent
     study.options_per_task = data.options_per_task
+    if data.profile_config is not None:
+        study.profile_config = json.dumps(data.profile_config, ensure_ascii=False)
     # reemplaza atributos/categorías (simple para el MVP)
     study.attributes.clear()
     db.flush()
@@ -113,4 +123,3 @@ def preview_scenarios(study_id: str, count: int = Query(5, ge=1, le=50),
                           "tasks_per_respondent": count, "options_per_task": study.options_per_task})()
     return {"possible": analytics.total_possible(study.attributes),
             "tasks": analytics.generate_tasks(fake)}
-

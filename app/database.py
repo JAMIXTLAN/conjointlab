@@ -37,3 +37,30 @@ def get_db():
     finally:
         db.close()
 
+
+def ensure_columns():
+    """Agrega columnas nuevas a tablas existentes sin perder datos.
+
+    create_all() no altera tablas ya creadas; esto cubre ese hueco en bases
+    que ya estaban desplegadas. Es idempotente (solo agrega lo que falta).
+    """
+    from sqlalchemy import inspect, text
+    wanted = {
+        "studies": {"profile_config": "TEXT"},
+        "respondents": {
+            "operator": "VARCHAR", "sex": "VARCHAR", "age_group": "VARCHAR",
+            "occupation": "VARCHAR", "education": "VARCHAR", "municipality": "VARCHAR",
+            "district": "VARCHAR", "electoral_section": "VARCHAR",
+            "locality_zone": "VARCHAR", "age": "VARCHAR",
+        },
+    }
+    insp = inspect(engine)
+    tables = insp.get_table_names()
+    with engine.begin() as conn:
+        for table, cols in wanted.items():
+            if table not in tables:
+                continue
+            have = {c["name"] for c in insp.get_columns(table)}
+            for col, typ in cols.items():
+                if col not in have:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {typ}"))

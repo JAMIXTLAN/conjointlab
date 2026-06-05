@@ -42,6 +42,7 @@ class StudyIn(BaseModel):
     tasks_per_respondent: int = 8
     options_per_task: int = 3
     attributes: List[AttributeIn]
+    profile_config: Optional[dict] = None
 
 
 class CategoryOut(BaseModel):
@@ -63,6 +64,7 @@ class StudyOut(BaseModel):
     options_per_task: int
     public_token: str
     attributes: List[AttributeOut]
+    profile_config: Optional[dict] = None
     response_count: int = 0
 
 
@@ -99,6 +101,7 @@ class TaskOut(BaseModel):
 class SurveyStartOut(BaseModel):
     study_id: str
     study_name: str
+    profile_config: Optional[dict] = None
     tasks: List[TaskOut]
 
 
@@ -110,9 +113,6 @@ class AnswerIn(BaseModel):
 class SubmitIn(BaseModel):
     name: Optional[str] = "Anónimo"
     operator: Optional[str] = ""
-    age: Optional[str] = ""
-    sex: Optional[str] = ""
-    municipality: Optional[str] = ""
-    tasks: List[TaskOut]            # mismas tareas que devolvió /start
-    answers: List[AnswerIn]         # una respuesta por tarea
-
+    profile: Optional[dict] = None      # {sex, age_group, occupation, ...}
+    tasks: List[TaskOut]                 # mismas tareas que devolvió /start
+    answers: List[AnswerIn]             # una respuesta por tarea

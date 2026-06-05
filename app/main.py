@@ -5,12 +5,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from .database import Base, engine
+from .database import Base, engine, ensure_columns
 from . import models  # noqa: F401  (registra los modelos)
 from .routers import auth as auth_router, studies, survey, results
 
 # Crea las tablas si no existen (para Postgres en producción usa Alembic).
 Base.metadata.create_all(bind=engine)
+# Agrega columnas nuevas a tablas ya existentes (auto-migración ligera).
+ensure_columns()
 
 app = FastAPI(title="ConjointLab API", version="1.0")
 
