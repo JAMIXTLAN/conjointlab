@@ -1,7 +1,9 @@
+# Entorno fijo y reproducible: Render usará EXACTAMENTE esto.
 FROM python:3.12-slim
 
 WORKDIR /app
 
+# Dependencias del sistema mínimas
 RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
