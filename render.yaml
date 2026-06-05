@@ -1,8 +1,9 @@
+# Despliegue con Docker: el entorno queda fijo por el Dockerfile.
 services:
   - type: web
     name: conjointlab
     runtime: docker
-    plan: free
+    plan: free            # cámbialo a "starter" (~$7/mes) para que no se duerma
     dockerfilePath: ./Dockerfile
     envVars:
       - key: SECRET_KEY
@@ -14,4 +15,4 @@ services:
 
 databases:
   - name: conjoint-db
-    plan: free
+    plan: free            # la base free de Render se elimina a los 90 días
