@@ -11,7 +11,7 @@
   let phase = "demo";     // demo | tasks | done
   let step = 0;
   let answers = {};       // task_index -> chosen_option_index
-  let demo = { name: "", age: "", sex: "", municipality: "" };
+  let demo = {};
 
   function toast(m) { const t = document.getElementById("toast"); t.textContent = m; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2200); }
 
@@ -32,27 +32,44 @@
   }
 
   function renderDemo() {
+    const cfg = (data.profile_config && data.profile_config.fields) || [];
+    const fields = cfg.filter(f => f.enabled !== false);
+    const fieldHtml = fields.map(f => {
+      const req = f.required ? ' <span style="color:#C8553D">*</span>' : '';
+      const help = f.help ? `<div class="muted" style="font-size:11px;margin-top:2px">${esc(f.help)}</div>` : '';
+      if (f.type === 'single') {
+        const opts = (f.options || []).map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('');
+        return `<div style="margin-top:12px"><label class="label">${esc(f.label)}${req}</label>
+          <select id="pf_${f.key}"><option value="">— Selecciona —</option>${opts}</select>${help}</div>`;
+      }
+      return `<div style="margin-top:12px"><label class="label">${esc(f.label)}${req}</label>
+        <input id="pf_${f.key}" placeholder="${f.required ? '' : 'Opcional'}" />${help}</div>`;
+    }).join('');
+
     root.innerHTML = `
-      <div class="card" style="max-width:560px;margin:8vh auto 0">
+      <div class="card" style="max-width:600px;margin:6vh auto 0">
         <div class="eyebrow">${esc(data.study_name)}</div>
-        <h2 class="h" style="margin-top:6px">Antes de empezar</h2>
-        ${operator ? `<p class="muted" style="margin:4px 0 0">Operador: <b>${esc(operator)}</b></p>` : ""}
-        <p class="muted">Datos opcionales para análisis posterior.</p>
-        <div style="margin-top:14px"><label class="label">Tu nombre (opcional)</label><input id="d-name" placeholder="Anónimo" /></div>
-        <div class="grid3" style="margin-top:10px">
-          <div><label class="label">Edad</label><input id="d-age" class="mono" placeholder="—" /></div>
-          <div><label class="label">Sexo</label><input id="d-sex" placeholder="—" /></div>
-          <div><label class="label">Municipio</label><input id="d-mun" placeholder="—" /></div>
-        </div>
+        <h2 class="h" style="margin-top:6px">Registro del entrevistado</h2>
+        ${operator ? `<p class="muted" style="margin:4px 0 0">Encuestador: <b>${esc(operator)}</b></p>` : ""}
+        <p class="muted">Completa los datos antes de iniciar las tareas. Los campos con * son obligatorios.</p>
+        ${fieldHtml}
+        <div class="err" id="pf_err" style="margin-top:10px;color:#C8553D"></div>
         <button class="btn primary lg" style="width:100%;justify-content:center;margin-top:18px" onclick="window.__startTasks()">Comenzar →</button>
       </div>`;
+
     window.__startTasks = () => {
-      demo = {
-        name: document.getElementById("d-name").value.trim() || "Anónimo",
-        age: document.getElementById("d-age").value.trim(),
-        sex: document.getElementById("d-sex").value.trim(),
-        municipality: document.getElementById("d-mun").value.trim(),
-      };
+      const prof = {}; const faltan = [];
+      fields.forEach(f => {
+        const el = document.getElementById('pf_' + f.key);
+        const val = (el && el.value || '').trim();
+        if (f.required && !val) faltan.push(f.label);
+        prof[f.key] = val;
+      });
+      if (faltan.length) {
+        document.getElementById('pf_err').textContent = 'Faltan campos obligatorios: ' + faltan.join(', ') + '.';
+        return;
+      }
+      demo = prof;
       phase = "tasks"; step = 0; render();
     };
   }
@@ -86,8 +103,9 @@
 
   async function submit() {
     const payload = {
-      ...demo,
+      name: demo.name || "Anónimo",
       operator: operator,
+      profile: demo,
       tasks: data.tasks,
       answers: Object.entries(answers).map(([k, v]) => ({ task_index: +k, chosen_option_index: v })),
     };
@@ -108,7 +126,7 @@
       <button class="btn primary lg" style="margin-top:18px" onclick="window.__nueva()">Iniciar nueva entrevista →</button></div>`;
     window.__nueva = () => {
       phase = "demo"; step = 0; answers = {};
-      demo = { name: "", age: "", sex: "", municipality: "" };
+      demo = {};
       load();  // pide tareas nuevas (otra combinación aleatoria) y muestra la pantalla inicial
     };
   }

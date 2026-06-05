@@ -5,7 +5,30 @@ const App = (() => {
   let authMode = "login";
   let editing = null;          // estudio en edición
   let editAttrs = [];          // estado del editor de atributos
+  let editProfile = [];        // estado del editor de campos de perfil
   let charts = [];             // instancias Chart.js para destruir al re-render
+
+  // Configuración por defecto de los campos de perfil (espejo del backend).
+  const DEFAULT_PROFILE_FIELDS = [
+    { key: "sex", label: "Sexo", type: "single", enabled: true, required: true,
+      options: ["Hombre", "Mujer", "Otro", "Prefiere no decir"] },
+    { key: "age_group", label: "Edad", type: "single", enabled: true, required: true,
+      options: ["Menos de 18", "18 a 35", "36 a 50", "51 a 60", "61 y más"] },
+    { key: "occupation", label: "Ocupación", type: "single", enabled: true, required: false,
+      options: ["Ama de casa", "Estudiante", "Empleado/a del sector privado", "Empleado/a de gobierno",
+        "Comerciante", "Empresario/a", "Trabajador/a independiente", "Profesionista independiente",
+        "Campesino/a o trabajador/a del campo", "Obrero/a", "Jubilado/a o pensionado/a",
+        "Desempleado/a", "Otra", "Prefiere no decir"] },
+    { key: "education", label: "Escolaridad", type: "single", enabled: true, required: false,
+      options: ["Sin estudios", "Primaria", "Secundaria", "Preparatoria / bachillerato",
+        "Carrera técnica", "Licenciatura", "Posgrado", "Prefiere no decir"] },
+    { key: "municipality", label: "Municipio", type: "text", enabled: true, required: true, options: [] },
+    { key: "district", label: "Distrito", type: "text", enabled: true, required: false, options: [],
+      help: "Distrito local, federal o clave interna del estudio." },
+    { key: "electoral_section", label: "Sección electoral", type: "number_flex", enabled: true, required: false, options: [],
+      help: "Preferentemente numérica; admite clave especial." },
+    { key: "locality_zone", label: "Localidad / colonia / zona", type: "text", enabled: true, required: false, options: [] },
+  ];
 
   /* ---------- API ---------- */
   async function api(path, opts = {}) {
@@ -151,6 +174,9 @@ const App = (() => {
           { name: "Precio", categories: ["$100", "$150", "$200"] },
           { name: "Marca", categories: ["Marca A", "Marca B", "Marca C"] },
         ];
+    const srcFields = (editing && editing.profile_config && editing.profile_config.fields)
+      ? editing.profile_config.fields : DEFAULT_PROFILE_FIELDS;
+    editProfile = JSON.parse(JSON.stringify(srcFields));  // copia profunda
     const el = $("screen-editor");
     el.innerHTML = `
       <div class="page-head"><div><div class="eyebrow">${editing ? "Editar" : "Nuevo"} estudio</div><h1 class="h">Configuración</h1></div>
@@ -170,12 +196,43 @@ const App = (() => {
           <button class="btn soft sm" onclick="App.addAttr()">＋ Atributo</button></div>
         <div id="attr-list"></div>
       </div>
+      <div class="card">
+        <div class="card-title">👤 Perfil del entrevistado</div>
+        <p class="muted" style="margin:2px 0 10px">Define qué se captura antes de las tareas. Marca obligatorios y edita las opciones de los menús cerrados (una por línea).</p>
+        <div id="profile-list"></div>
+      </div>
       <div class="row" style="justify-content:space-between; padding:6px 2px">
         <div class="muted" id="combo-info"></div>
         <button class="btn primary lg" onclick="App.saveStudy()">✓ Guardar estudio</button>
       </div>`;
     renderAttrs();
+    renderProfile();
   }
+
+  function renderProfile() {
+    $("profile-list").innerHTML = editProfile.map((f, i) => {
+      const isClosed = f.type === "single";
+      const optsBox = isClosed
+        ? `<div style="margin-top:8px"><label class="label" style="font-size:11px">Opciones (una por línea)</label>
+             <textarea rows="${Math.min((f.options||[]).length+1,8)}" style="width:100%;font-family:inherit;font-size:13px"
+               oninput="App.setPFOptions(${i}, this.value)">${esc((f.options||[]).join("\n"))}</textarea></div>`
+        : `<div class="muted" style="font-size:11px;margin-top:6px">Campo abierto${f.help ? " — " + esc(f.help) : ""}</div>`;
+      return `<div class="attr" style="padding:12px 14px">
+        <div class="row" style="justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="font-weight:600">${esc(f.label)} <span class="muted" style="font-weight:400;font-size:11px">(${isClosed ? "menú cerrado" : "texto"})</span></div>
+          <div class="row" style="gap:16px">
+            <label class="row" style="gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" ${f.enabled!==false?"checked":""} onchange="App.setPF(${i},'enabled',this.checked)"> Incluir</label>
+            <label class="row" style="gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" ${f.required?"checked":""} onchange="App.setPF(${i},'required',this.checked)"> Obligatorio</label>
+          </div>
+        </div>
+        ${optsBox}
+      </div>`;
+    }).join("");
+  }
+  const setPF = (i, key, val) => { editProfile[i][key] = val; };
+  const setPFOptions = (i, text) => {
+    editProfile[i].options = text.split("\n").map((s) => s.trim()).filter(Boolean);
+  };
 
   function renderAttrs() {
     const possible = editAttrs.reduce((p, a) => p * Math.max(a.categories.filter((c) => c.trim()).length, 1), 1);
@@ -210,6 +267,7 @@ const App = (() => {
       tasks_per_respondent: +$("f-tasks").value || 8,
       options_per_task: +$("f-opts").value || 3,
       attributes,
+      profile_config: { fields: editProfile },
     };
     try {
       if (editing) await api("/api/studies/" + editing.id, { method: "PUT", body: JSON.stringify(body) });
@@ -221,14 +279,62 @@ const App = (() => {
   /* ---------- results / dashboards ---------- */
   function destroyCharts() { charts.forEach((c) => c.destroy()); charts = []; }
 
+  let curId = null, curStudy = null, curSeg = { field: "", value: "" };
+
   async function renderResults(id) {
     destroyCharts();
+    curId = id; curSeg = { field: "", value: "" };
     const el = $("screen-results");
     el.innerHTML = `<div class="muted">Cargando resultados…</div>`;
-    let R, study;
     try {
-      study = await api("/api/studies/" + id);
-      R = await api("/api/studies/" + id + "/results");
+      curStudy = await api("/api/studies/" + id);
+    } catch (e) { el.innerHTML = `<p class="err">${e.message}</p>`; return; }
+    loadResults();
+  }
+
+  const segField = (f) => { curSeg.field = f; curSeg.value = ""; loadResults(); };
+  const segValue = (v) => { curSeg.value = v; loadResults(); };
+  const segClear = () => { curSeg = { field: "", value: "" }; loadResults(); };
+
+  function segBar(R) {
+    const segs = R.segments || [];
+    if (!segs.length) return "";
+    const fieldOpts = `<option value="">— Todos los entrevistados —</option>` +
+      segs.map((s) => `<option value="${s.field}" ${curSeg.field === s.field ? "selected" : ""}>${esc(s.label)}</option>`).join("");
+    let valueSel = `<select id="seg-value" disabled><option>—</option></select>`;
+    if (curSeg.field) {
+      const cur = segs.find((s) => s.field === curSeg.field);
+      if (cur) {
+        const opts = `<option value="">— Elige un valor —</option>` +
+          cur.values.map((v) => `<option value="${esc(v.value)}" ${curSeg.value === v.value ? "selected" : ""}>${esc(v.value)} (${v.n})</option>`).join("");
+        valueSel = `<select id="seg-value" onchange="App.segValue(this.value)">${opts}</select>`;
+      }
+    }
+    const banner = R.applied_filter
+      ? `<div class="chip" style="margin-top:10px;background:#FCEFE9;color:#C8553D">
+           Mostrando: <b>&nbsp;${esc(R.applied_filter.label)} = ${esc(R.applied_filter.value)}</b> &nbsp;(n=${R.n_responses})
+           <button class="x" onclick="App.segClear()" title="Quitar filtro">×</button></div>`
+      : `<div class="muted" style="font-size:12px;margin-top:8px">Sin filtro: mostrando todos los entrevistados.</div>`;
+    return `<div class="card">
+      <div class="card-title">🔎 Segmentación</div>
+      <p class="muted" style="font-size:12.5px">Cruza los resultados por perfil o territorio. Por ejemplo: qué precandidato funciona mejor entre mujeres, o qué combinación gana en cierto municipio.</p>
+      <div class="row" style="gap:10px;flex-wrap:wrap;margin-top:8px">
+        <select id="seg-field" onchange="App.segField(this.value)" style="max-width:260px">${fieldOpts}</select>
+        ${valueSel}
+      </div>
+      ${banner}
+    </div>`;
+  }
+
+  async function loadResults() {
+    destroyCharts();
+    const id = curId, study = curStudy;
+    const el = $("screen-results");
+    let R;
+    let qs = "";
+    if (curSeg.field && curSeg.value) qs = `?seg_field=${encodeURIComponent(curSeg.field)}&seg_value=${encodeURIComponent(curSeg.value)}`;
+    try {
+      R = await api("/api/studies/" + id + "/results" + qs);
     } catch (e) { el.innerHTML = `<p class="err">${e.message}</p>`; return; }
 
     const head = `<div class="page-head"><div><div class="eyebrow">${esc(study.name)}</div><h1 class="h">Panel de resultados</h1></div>
@@ -238,7 +344,9 @@ const App = (() => {
         <button class="btn ghost" onclick="App.go('dashboard')">‹ Volver</button>
       </div></div>`;
 
-    if (R.total_choices === 0) {
+    // Si el estudio no tiene NINGUNA respuesta todavía.
+    const noneAtAll = (!R.segments || !R.segments.length) && R.total_choices === 0;
+    if (noneAtAll) {
       el.innerHTML = head + `<div class="empty"><p>Aún no hay respuestas para este estudio.</p>
         <p>Comparte el link de la encuesta para empezar a recopilar.</p>
         <div class="share-link" style="max-width:520px;margin:14px auto;">${location.origin}/survey?study=${study.public_token}
@@ -246,14 +354,21 @@ const App = (() => {
       return;
     }
 
-    el.innerHTML = head + `
+    // Con filtro aplicado pero sin datos en ese segmento.
+    if (R.total_choices === 0) {
+      el.innerHTML = head + segBar(R) + `<div class="empty"><p>No hay respuestas para este segmento.</p>
+        <p>Prueba con otro valor o quita el filtro.</p></div>`;
+      return;
+    }
+
+    el.innerHTML = head + segBar(R) + `
       <div class="stats">
         <div class="stat"><div class="v">${R.n_responses}</div><div class="l">Encuestados</div></div>
         <div class="stat"><div class="v">${R.total_choices}</div><div class="l">Elecciones</div></div>
         <div class="stat"><div class="v">${R.attribute_count}</div><div class="l">Atributos</div></div>
         <div class="stat"><div class="v">${R.combos.length}</div><div class="l">Combinaciones vistas</div></div>
       </div>
-      <div class="card">
+      ${R.applied_filter ? "" : `<div class="card">
         <div class="card-title">🧑‍💼 Operadores de campo</div>
         <p class="muted" style="font-size:12.5px">Genera un link por operador. Todas las respuestas caen en este mismo estudio, pero podrás saber quién capturó cada una.</p>
         <div class="row" style="margin:10px 0">
@@ -264,7 +379,7 @@ const App = (() => {
         ${(R.by_operator && R.by_operator.length) ? `
         <table style="margin-top:8px"><thead><tr><th>Operador</th><th>Entrevistas</th><th>Elecciones</th></tr></thead>
         <tbody>${R.by_operator.map((o) => `<tr><td>${esc(o.operator)}</td><td class="mono">${o.respondents}</td><td class="mono">${o.choices}</td></tr>`).join("")}</tbody></table>` : ""}
-      </div>
+      </div>`}
       <div class="card">
         <div class="card-title">📊 Elección por atributo y categoría</div>
         <p class="muted" style="font-size:12.5px">El <b>%</b> suma 100% dentro de cada atributo. La <b>tasa</b> = elegida ÷ mostrada (ajustada por exposición).</p>
@@ -283,8 +398,6 @@ const App = (() => {
           <td class="mono">${c.shown}</td><td class="mono">${c.chosen}</td><td class="mono">${pct(c.share)}</td><td class="mono">${pct(c.win_rate)}</td></tr>`).join("")}</tbody></table>
       </div>`;
 
-    // 1) Crea TODOS los recuadros primero (para que la grilla ya tenga sus
-    //    columnas finales). 2) Recién entonces dibuja, con el ancho correcto.
     const wrap = $("attr-charts");
     if (wrap) {
       const specs = R.by_attribute.map((a) => ({
@@ -360,5 +473,6 @@ const App = (() => {
   document.addEventListener("DOMContentLoaded", init);
 
   return { setAuthMode, submitAuth, logout, go, del, copyLink, opLink, download,
-    addAttr, delAttr, setAttrName, addCat, delCat, setCat, saveStudy };
+    addAttr, delAttr, setAttrName, addCat, delCat, setCat, saveStudy,
+    setPF, setPFOptions, segField, segValue, segClear };
 })();
