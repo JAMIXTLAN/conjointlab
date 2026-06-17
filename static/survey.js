@@ -108,20 +108,39 @@
       body = `<textarea id="q_open" rows="5" style="width:100%;font-family:inherit;font-size:15px" placeholder="Escribe la respuesta…">${esc(a.answer_text || "")}</textarea>`;
     } else if (q.qtype === "single" || q.qtype === "likert") {
       const sel = (a.answer_options || [])[0];
+      const hasImg = (cfg.options || []).some(o => o && o.image);
       const opts = (cfg.options || []).map(o => {
         const t = o.text != null ? o.text : o;
-        return `<button class="option ${sel === t ? "sel" : ""}" style="text-align:left" onclick="window.__qsingle('${esc(t).replace(/'/g, "\\'")}')">${esc(t)}</button>`;
+        const safe = esc(t).replace(/'/g, "\\'");
+        if (o.image) {
+          return `<button class="optcard ${sel === t ? "sel" : ""}" onclick="window.__qsingle('${safe}')">
+            <img src="${esc(o.image)}" alt="" onerror="this.style.opacity=.2">
+            <span>${esc(t)}</span></button>`;
+        }
+        return `<button class="option ${sel === t ? "sel" : ""}" style="text-align:left" onclick="window.__qsingle('${safe}')">${esc(t)}</button>`;
       }).join("");
-      body = `<div class="options" style="grid-template-columns:1fr;gap:8px">${opts}</div>`;
+      body = hasImg
+        ? `<div class="optgrid">${opts}</div>`
+        : `<div class="options" style="grid-template-columns:1fr;gap:8px">${opts}</div>`;
     } else if (q.qtype === "multi") {
       const sel = new Set(a.answer_options || []);
+      const hasImg = (cfg.options || []).some(o => o && o.image);
       const opts = (cfg.options || []).map(o => {
         const t = o.text != null ? o.text : o;
-        return `<button class="option ${sel.has(t) ? "sel" : ""}" style="text-align:left" onclick="window.__qmulti('${esc(t).replace(/'/g, "\\'")}')">
+        const safe = esc(t).replace(/'/g, "\\'");
+        if (o.image) {
+          return `<button class="optcard ${sel.has(t) ? "sel" : ""}" onclick="window.__qmulti('${safe}')">
+            <span class="optcheck">${sel.has(t) ? "\u2611" : "\u2610"}</span>
+            <img src="${esc(o.image)}" alt="" onerror="this.style.opacity=.2">
+            <span>${esc(t)}</span></button>`;
+        }
+        return `<button class="option ${sel.has(t) ? "sel" : ""}" style="text-align:left" onclick="window.__qmulti('${safe}')">
           <span style="margin-right:8px">${sel.has(t) ? "\u2611" : "\u2610"}</span>${esc(t)}</button>`;
       }).join("");
-      body = `<div class="options" style="grid-template-columns:1fr;gap:8px">${opts}</div>
-        <p class="muted" style="font-size:12px">Puedes elegir varias.</p>`;
+      body = (hasImg
+        ? `<div class="optgrid">${opts}</div>`
+        : `<div class="options" style="grid-template-columns:1fr;gap:8px">${opts}</div>`)
+        + `<p class="muted" style="font-size:12px;margin-top:6px">Puedes elegir varias.</p>`;
     } else if (q.qtype === "numeric") {
       const mn = cfg.min != null ? cfg.min : 0, mx = cfg.max != null ? cfg.max : 10;
       const cur = a.answer_num;

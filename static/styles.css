@@ -147,3 +147,13 @@ tr.lead td{background:rgba(200,85,61,.05); font-weight:600;}
 .seg-tabs{display:flex;gap:6px;margin:8px 0 14px;}
 .seg-tabs button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px;color:var(--muted);}
 .seg-tabs button.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+
+/* --- opciones con imagen (tarjetas visuales) --- */
+.optgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-top:6px;}
+.optcard{position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;
+  border:1.5px solid var(--line);background:#fff;border-radius:14px;padding:14px 10px;cursor:pointer;transition:all .12s;}
+.optcard:hover{border-color:var(--accent);}
+.optcard.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset;}
+.optcard img{width:100%;max-height:110px;object-fit:contain;border-radius:8px;}
+.optcard span{font-size:13.5px;text-align:center;font-weight:600;color:var(--ink);}
+.optcard .optcheck{position:absolute;top:8px;left:10px;font-size:18px;}

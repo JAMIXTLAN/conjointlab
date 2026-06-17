@@ -248,10 +248,24 @@ const App = (() => {
       const cfg = q.config || {};
       let extra = "";
       if (isClosed) {
-        const lines = (cfg.options || []).map(o => (o.text != null ? o.text : o) + (o.anchor ? "  |ancla" : "")).join("\n");
-        extra = `<div style="margin-top:8px"><label class="label" style="font-size:11px">Opciones (una por línea; agrega "  |ancla" para fijarla al final)</label>
-          <textarea rows="${Math.min((cfg.options||[]).length+1,8)}" style="width:100%;font-family:inherit;font-size:13px" oninput="App.setQOptions(${i}, this.value)">${esc(lines)}</textarea>
-          <label class="row" style="gap:6px;font-size:12.5px;cursor:pointer;margin-top:6px"><input type="checkbox" ${q.randomize?"checked":""} onchange="App.setQ(${i},'randomize',this.checked)"> Aleatorizar opciones</label></div>`;
+        const opts = cfg.options || [];
+        const rows = opts.map((o, j) => {
+          const img = o.image || "";
+          const thumb = img ? `<img src="${esc(img)}" alt="" style="width:34px;height:34px;object-fit:cover;border-radius:6px;border:1px solid var(--line)" onerror="this.style.opacity=.25">` : `<div style="width:34px;height:34px;border-radius:6px;border:1px dashed var(--line)"></div>`;
+          return `<div class="qopt">
+            ${thumb}
+            <input value="${esc(o.text != null ? o.text : o)}" placeholder="Texto de la opción" style="flex:1" oninput="App.setQOptField(${i},${j},'text',this.value)">
+            <input value="${esc(img)}" placeholder="URL de imagen (opcional)" style="flex:1.2" oninput="App.setQOptField(${i},${j},'image',this.value)">
+            <label class="row" style="gap:4px;font-size:11px;cursor:pointer" title="Fijar al final (no se aleatoriza)"><input type="checkbox" ${o.anchor ? "checked" : ""} onchange="App.setQOptField(${i},${j},'anchor',this.checked)"> ancla</label>
+            <button class="x" onclick="App.delQOpt(${i},${j})">×</button>
+          </div>`;
+        }).join("");
+        extra = `<div style="margin-top:8px">
+          <label class="label" style="font-size:11px">Opciones (texto y, si quieres, una imagen por opción: logo de partido, foto de candidato…)</label>
+          <div>${rows}</div>
+          <button class="cat-add" onclick="App.addQOpt(${i})">＋ opción</button>
+          <label class="row" style="gap:6px;font-size:12.5px;cursor:pointer;margin-top:8px"><input type="checkbox" ${q.randomize?"checked":""} onchange="App.setQ(${i},'randomize',this.checked)"> Aleatorizar opciones</label>
+        </div>`;
       } else if (q.qtype === "numeric") {
         extra = `<div class="row" style="gap:10px;margin-top:8px">
           <div><label class="label" style="font-size:11px">Mínimo</label><input type="number" class="mono" style="max-width:90px" value="${cfg.min!=null?cfg.min:0}" oninput="App.setQNum(${i},'min',this.value)"></div>
@@ -303,13 +317,24 @@ const App = (() => {
       renderQuestions();
     }
   };
-  const setQOptions = (i, text) => {
-    const opts = text.split("\n").map((s) => s.trim()).filter(Boolean).map((line) => {
-      const anchor = /\|ancla\s*$/i.test(line);
-      const t = line.replace(/\s*\|ancla\s*$/i, "").trim();
-      return { id: t.toLowerCase().replace(/\s+/g, "_").slice(0, 24) || Math.random().toString(36).slice(2, 8), text: t, anchor };
-    });
-    editQuestions[i].config = Object.assign({}, editQuestions[i].config, { options: opts });
+  const _ensureOpts = (i) => {
+    if (!editQuestions[i].config) editQuestions[i].config = {};
+    if (!Array.isArray(editQuestions[i].config.options)) editQuestions[i].config.options = [];
+    return editQuestions[i].config.options;
+  };
+  const addQOpt = (i) => {
+    const opts = _ensureOpts(i);
+    opts.push({ id: Math.random().toString(36).slice(2, 8), text: "", image: "", anchor: false });
+    renderQuestions();
+  };
+  const delQOpt = (i, j) => { _ensureOpts(i).splice(j, 1); renderQuestions(); };
+  const setQOptField = (i, j, field, val) => {
+    const opts = _ensureOpts(i);
+    if (!opts[j]) return;
+    if (typeof opts[j] !== "object") opts[j] = { id: Math.random().toString(36).slice(2, 8), text: String(opts[j]) };
+    opts[j][field] = val;
+    // re-render solo al cambiar 'ancla' (para no perder el foco al escribir)
+    if (field === "anchor") renderQuestions();
   };
   const setQNum = (i, key, val) => {
     editQuestions[i].config = Object.assign({}, editQuestions[i].config, { [key]: val === "" ? null : +val });
@@ -574,7 +599,8 @@ const App = (() => {
       } else {
         const opts = q.options || [];
         inner = opts.map((o) => `<div style="margin:8px 0">
-            <div class="row" style="justify-content:space-between;font-size:13.5px"><span>${esc(o.text)}</span>
+            <div class="row" style="justify-content:space-between;font-size:13.5px">
+              <span class="row" style="gap:8px;align-items:center">${o.image ? `<img src="${esc(o.image)}" alt="" style="width:26px;height:26px;object-fit:contain;border-radius:5px" onerror="this.style.display='none'">` : ""}${esc(o.text)}</span>
               <span class="mono muted">${o.count} · ${pct(o.pct)}</span></div>
             ${bar(o.pct, "#C8553D")}</div>`).join("");
         if (q.multi) inner += `<p class="muted" style="font-size:11.5px;margin-top:4px">Opción múltiple: los % pueden sumar más de 100%.</p>`;
@@ -645,5 +671,6 @@ const App = (() => {
   return { setAuthMode, submitAuth, logout, go, del, copyLink, opLink, download,
     addAttr, delAttr, setAttrName, addCat, delCat, setCat, saveStudy,
     setPF, setPFOptions, segField, segValue, segClear,
-    toggleConjoint, addQuestion, delQuestion, moveQuestion, setQ, setQOptions, setQNum };
+    toggleConjoint, addQuestion, delQuestion, moveQuestion, setQ, setQNum,
+    addQOpt, delQOpt, setQOptField };
 })();

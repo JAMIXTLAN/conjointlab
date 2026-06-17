@@ -81,10 +81,15 @@ def _question_results(study, subset):
                     counts[opt] = counts.get(opt, 0) + 1
             # ordena según las opciones definidas (si existen), si no por frecuencia
             defined = [o.get("text") if isinstance(o, dict) else o for o in (cfg.get("options") or [])]
+            img_map = {}
+            for o in (cfg.get("options") or []):
+                if isinstance(o, dict) and o.get("text") and o.get("image"):
+                    img_map[o["text"]] = o["image"]
             ordered = [t for t in defined if t in counts] + [t for t in counts if t not in defined]
             base = n if q.qtype != "multi" else max(1, n)
             item["options"] = [{"text": t, "count": counts.get(t, 0),
-                                "pct": (counts.get(t, 0) / base if base else 0)} for t in (ordered or counts.keys())]
+                                "pct": (counts.get(t, 0) / base if base else 0),
+                                "image": img_map.get(t, "")} for t in (ordered or counts.keys())]
             item["multi"] = (q.qtype == "multi")
         elif q.qtype == "numeric":
             nums = [a.answer_num for a in answers if a.answer_num is not None]
