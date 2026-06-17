@@ -2,6 +2,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 import json
+import random
 
 from ..database import get_db
 from .. import models, schemas, analytics
@@ -17,17 +18,49 @@ def _study_by_token(token: str, db: Session) -> models.Study:
     return study
 
 
+def _randomize_options(cfg: dict) -> dict:
+    """Devuelve una copia de la config con las opciones barajadas,
+    manteniendo al final las marcadas como 'anchor' (ej. Ninguno / No sé)."""
+    cfg = dict(cfg or {})
+    opts = cfg.get("options")
+    if isinstance(opts, list) and opts:
+        movable = [o for o in opts if not (isinstance(o, dict) and o.get("anchor"))]
+        anchored = [o for o in opts if (isinstance(o, dict) and o.get("anchor"))]
+        random.shuffle(movable)
+        cfg["options"] = movable + anchored
+    return cfg
+
+
+def _serialize_questions(study: models.Study) -> list:
+    out = []
+    qs = sorted(study.questions, key=lambda x: (x.section != "pre", x.position))
+    for q in qs:
+        try:
+            cfg = json.loads(q.config) if q.config else {}
+        except Exception:
+            cfg = {}
+        if q.randomize and q.qtype in ("single", "multi", "likert"):
+            cfg = _randomize_options(cfg)
+        out.append({
+            "id": q.id, "position": q.position, "section": q.section,
+            "qtype": q.qtype, "text": q.text or "",
+            "required": bool(q.required), "randomize": bool(q.randomize), "config": cfg,
+        })
+    return out
+
+
 @router.get("/{token}/start", response_model=schemas.SurveyStartOut)
 def start(token: str, db: Session = Depends(get_db)):
-    """Genera las tareas para un nuevo encuestado (aún no se guardan)."""
+    """Genera las tareas y preguntas para un nuevo encuestado (aún no se guardan)."""
     study = _study_by_token(token, db)
-    tasks = analytics.generate_tasks(study)
+    tasks = analytics.generate_tasks(study) if study.has_conjoint and study.attributes else []
     try:
         cfg = json.loads(study.profile_config) if study.profile_config else DEFAULT_PROFILE
     except Exception:
         cfg = DEFAULT_PROFILE
     return {"study_id": study.id, "study_name": study.name,
-            "profile_config": cfg, "tasks": tasks}
+            "profile_config": cfg, "has_conjoint": bool(study.has_conjoint),
+            "questions": _serialize_questions(study), "tasks": tasks}
 
 
 @router.post("/{token}/submit")
@@ -62,5 +95,22 @@ def submit(token: str, data: schemas.SubmitIn, db: Session = Depends(get_db)):
         respondent.interactions.append(inter)
 
     db.add(respondent)
+    db.flush()
+
+    # respuestas de preguntas estándar
+    qmap = {q.id: q for q in study.questions}
+    for qa in (data.question_answers or []):
+        q = qmap.get(qa.question_id)
+        ans = models.Answer(
+            respondent_id=respondent.id,
+            question_id=qa.question_id,
+            qtype=qa.qtype or (q.qtype if q else ""),
+            question_text=(q.text if q else ""),
+            answer_text=(qa.answer_text or ""),
+            answer_num=qa.answer_num,
+            answer_options=json.dumps(qa.answer_options, ensure_ascii=False) if qa.answer_options is not None else None,
+        )
+        db.add(ans)
+
     db.commit()
     return {"ok": True, "respondent_id": respondent.id}

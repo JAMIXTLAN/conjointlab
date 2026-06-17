@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import (
-    Column, String, Integer, DateTime, ForeignKey, Text,
+    Column, String, Integer, DateTime, ForeignKey, Text, Boolean, Float,
 )
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -33,12 +33,17 @@ class Study(Base):
     options_per_task = Column(Integer, default=3)        # opciones por pantalla
     public_token = Column(String, unique=True, index=True, default=_uuid)  # link público
     profile_config = Column(Text, nullable=True)  # JSON con la config de campos de perfil
+    has_conjoint = Column(Boolean, default=True)   # si el estudio incluye el bloque conjoint
     created_at = Column(DateTime, default=datetime.utcnow)
 
     owner = relationship("User", back_populates="studies")
     attributes = relationship(
         "Attribute", back_populates="study",
         cascade="all, delete-orphan", order_by="Attribute.position",
+    )
+    questions = relationship(
+        "Question", back_populates="study",
+        cascade="all, delete-orphan", order_by="Question.position",
     )
     respondents = relationship(
         "Respondent", back_populates="study", cascade="all, delete-orphan",
@@ -94,6 +99,9 @@ class Respondent(Base):
     interactions = relationship(
         "Interaction", back_populates="respondent", cascade="all, delete-orphan",
     )
+    answers = relationship(
+        "Answer", back_populates="respondent", cascade="all, delete-orphan",
+    )
 
 
 class Interaction(Base):
@@ -135,3 +143,34 @@ class OptionItem(Base):
     category_name = Column(String)
 
     option = relationship("Option", back_populates="items")
+
+
+class Question(Base):
+    """Pregunta de cuestionario estándar (no conjoint)."""
+    __tablename__ = "questions"
+    id = Column(String, primary_key=True, default=_uuid)
+    study_id = Column(String, ForeignKey("studies.id", ondelete="CASCADE"))
+    position = Column(Integer, default=0)        # orden dentro de su sección
+    section = Column(String, default="pre")      # "pre" (antes) | "post" (después del conjoint)
+    qtype = Column(String, default="single")     # open | single | multi | likert | numeric
+    text = Column(Text, default="")
+    required = Column(Boolean, default=False)
+    randomize = Column(Boolean, default=False)   # aleatorizar opciones (single/multi/likert)
+    config = Column(Text, nullable=True)         # JSON con opciones / escala / rango
+
+    study = relationship("Study", back_populates="questions")
+
+
+class Answer(Base):
+    """Respuesta de un entrevistado a una pregunta estándar."""
+    __tablename__ = "answers"
+    id = Column(String, primary_key=True, default=_uuid)
+    respondent_id = Column(String, ForeignKey("respondents.id", ondelete="CASCADE"))
+    question_id = Column(String, ForeignKey("questions.id", ondelete="SET NULL"), nullable=True)
+    qtype = Column(String, default="")           # desnormalizado
+    question_text = Column(Text, default="")     # desnormalizado para export
+    answer_text = Column(Text, default="")       # abiertas
+    answer_num = Column(Float, nullable=True)    # numérica / likert (valor)
+    answer_options = Column(Text, nullable=True) # JSON: lista de opciones elegidas (single/multi/likert)
+
+    respondent = relationship("Respondent", back_populates="answers")

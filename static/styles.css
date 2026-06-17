@@ -130,3 +130,20 @@ tr.lead td{background:rgba(200,85,61,.05); font-weight:600;}
 .toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:11px 18px; border-radius:10px; font-size:13px; z-index:50; opacity:0; transition:.2s;}
 .toast.show{opacity:1;}
 .share-link{display:flex; gap:8px; align-items:center; background:var(--paper); border:1px solid var(--line); border-radius:9px; padding:8px 10px; font-size:12.5px; font-family:'IBM Plex Mono',monospace; word-break:break-all;}
+
+/* --- escala numérica (preguntas) --- */
+.numscale{display:flex;flex-wrap:wrap;gap:8px;}
+.numbtn{min-width:46px;height:46px;border:1.5px solid var(--line);background:#fff;border-radius:10px;
+  font-family:'IBM Plex Mono',monospace;font-size:15px;cursor:pointer;transition:all .12s;color:var(--ink);}
+.numbtn:hover{border-color:var(--accent);}
+.numbtn.sel{background:var(--accent);color:#fff;border-color:var(--accent);}
+
+/* --- editor de preguntas (panel admin) --- */
+.qrow{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;background:#fff;}
+.qrow .qhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between;}
+.qtag{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);
+  border:1px solid var(--line);border-radius:6px;padding:2px 8px;}
+.qopt{display:flex;gap:8px;align-items:center;margin:5px 0;}
+.seg-tabs{display:flex;gap:6px;margin:8px 0 14px;}
+.seg-tabs button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px;color:var(--muted);}
+.seg-tabs button.active{background:var(--ink);color:#fff;border-color:var(--ink);}

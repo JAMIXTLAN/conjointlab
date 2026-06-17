@@ -6,6 +6,8 @@ const App = (() => {
   let editing = null;          // estudio en edición
   let editAttrs = [];          // estado del editor de atributos
   let editProfile = [];        // estado del editor de campos de perfil
+  let editQuestions = [];      // estado del editor de preguntas estándar
+  let editHasConjoint = true;  // si el estudio incluye bloque conjoint
   let charts = [];             // instancias Chart.js para destruir al re-render
 
   // Configuración por defecto de los campos de perfil (espejo del backend).
@@ -177,6 +179,8 @@ const App = (() => {
     const srcFields = (editing && editing.profile_config && editing.profile_config.fields)
       ? editing.profile_config.fields : DEFAULT_PROFILE_FIELDS;
     editProfile = JSON.parse(JSON.stringify(srcFields));  // copia profunda
+    editQuestions = editing && editing.questions ? JSON.parse(JSON.stringify(editing.questions)) : [];
+    editHasConjoint = editing ? !!editing.has_conjoint : true;
     const el = $("screen-editor");
     el.innerHTML = `
       <div class="page-head"><div><div class="eyebrow">${editing ? "Editar" : "Nuevo"} estudio</div><h1 class="h">Configuración</h1></div>
@@ -192,22 +196,124 @@ const App = (() => {
         </div>
       </div>
       <div class="card">
+        <label class="row" style="gap:10px;cursor:pointer;align-items:center">
+          <input type="checkbox" id="f-conjoint" ${editHasConjoint ? "checked" : ""} onchange="App.toggleConjoint(this.checked)">
+          <span><b>Incluir bloque de análisis conjoint</b><br><span class="muted" style="font-size:12.5px">Desactívalo si quieres un estudio solo de cuestionario.</span></span>
+        </label>
+      </div>
+      <div class="card" id="conjoint-card">
         <div class="row" style="justify-content:space-between"><div class="card-title">◧ Atributos y categorías</div>
           <button class="btn soft sm" onclick="App.addAttr()">＋ Atributo</button></div>
         <div id="attr-list"></div>
+        <div class="muted" id="combo-info" style="margin-top:8px"></div>
       </div>
       <div class="card">
         <div class="card-title">👤 Perfil del entrevistado</div>
         <p class="muted" style="margin:2px 0 10px">Define qué se captura antes de las tareas. Marca obligatorios y edita las opciones de los menús cerrados (una por línea).</p>
         <div id="profile-list"></div>
       </div>
-      <div class="row" style="justify-content:space-between; padding:6px 2px">
-        <div class="muted" id="combo-info"></div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between"><div class="card-title">📝 Cuestionario</div>
+          <div class="row" style="gap:6px">
+            <button class="btn soft sm" onclick="App.addQuestion('single')">＋ Pregunta</button>
+          </div></div>
+        <p class="muted" style="margin:2px 0 10px">Preguntas estándar. Usa la sección para ubicarlas antes o después del conjoint.</p>
+        <div id="question-list"></div>
+      </div>
+      <div class="row" style="justify-content:flex-end; padding:6px 2px">
         <button class="btn primary lg" onclick="App.saveStudy()">✓ Guardar estudio</button>
       </div>`;
     renderAttrs();
     renderProfile();
+    renderQuestions();
+    applyConjointVisibility();
   }
+
+  function applyConjointVisibility() {
+    const card = $("conjoint-card");
+    if (card) card.style.display = editHasConjoint ? "" : "none";
+  }
+  const toggleConjoint = (v) => { editHasConjoint = v; applyConjointVisibility(); };
+
+  const QTYPES = { open: "Abierta", single: "Opción única", multi: "Opción múltiple", likert: "Escala Likert", numeric: "Numérica" };
+
+  function renderQuestions() {
+    const host = $("question-list");
+    if (!editQuestions.length) {
+      host.innerHTML = `<p class="muted" style="font-size:13px">Aún no hay preguntas. Agrega una con el botón de arriba.</p>`;
+      return;
+    }
+    host.innerHTML = editQuestions.map((q, i) => {
+      const isClosed = q.qtype === "single" || q.qtype === "multi" || q.qtype === "likert";
+      const cfg = q.config || {};
+      let extra = "";
+      if (isClosed) {
+        const lines = (cfg.options || []).map(o => (o.text != null ? o.text : o) + (o.anchor ? "  |ancla" : "")).join("\n");
+        extra = `<div style="margin-top:8px"><label class="label" style="font-size:11px">Opciones (una por línea; agrega "  |ancla" para fijarla al final)</label>
+          <textarea rows="${Math.min((cfg.options||[]).length+1,8)}" style="width:100%;font-family:inherit;font-size:13px" oninput="App.setQOptions(${i}, this.value)">${esc(lines)}</textarea>
+          <label class="row" style="gap:6px;font-size:12.5px;cursor:pointer;margin-top:6px"><input type="checkbox" ${q.randomize?"checked":""} onchange="App.setQ(${i},'randomize',this.checked)"> Aleatorizar opciones</label></div>`;
+      } else if (q.qtype === "numeric") {
+        extra = `<div class="row" style="gap:10px;margin-top:8px">
+          <div><label class="label" style="font-size:11px">Mínimo</label><input type="number" class="mono" style="max-width:90px" value="${cfg.min!=null?cfg.min:0}" oninput="App.setQNum(${i},'min',this.value)"></div>
+          <div><label class="label" style="font-size:11px">Máximo</label><input type="number" class="mono" style="max-width:90px" value="${cfg.max!=null?cfg.max:10}" oninput="App.setQNum(${i},'max',this.value)"></div>
+        </div>`;
+      } else {
+        extra = `<p class="muted" style="font-size:11.5px;margin-top:6px">Respuesta de texto (el audio se añadirá en una fase posterior).</p>`;
+      }
+      return `<div class="qrow">
+        <div class="qhead">
+          <span class="qtag">${i + 1} · ${QTYPES[q.qtype] || q.qtype}</span>
+          <div class="row" style="gap:8px">
+            <select onchange="App.setQ(${i},'qtype',this.value)" style="font-size:12.5px;padding:4px 8px">
+              ${Object.entries(QTYPES).map(([k, v]) => `<option value="${k}" ${q.qtype === k ? "selected" : ""}>${v}</option>`).join("")}
+            </select>
+            <select onchange="App.setQ(${i},'section',this.value)" style="font-size:12.5px;padding:4px 8px">
+              <option value="pre" ${q.section === "pre" ? "selected" : ""}>Antes del conjoint</option>
+              <option value="post" ${q.section === "post" ? "selected" : ""}>Después del conjoint</option>
+            </select>
+            <button class="icon-btn" onclick="App.moveQuestion(${i},-1)" ${i === 0 ? "disabled" : ""}>↑</button>
+            <button class="icon-btn" onclick="App.moveQuestion(${i},1)" ${i === editQuestions.length - 1 ? "disabled" : ""}>↓</button>
+            <button class="icon-btn" onclick="App.delQuestion(${i})">🗑</button>
+          </div>
+        </div>
+        <input value="${esc(q.text || "")}" placeholder="Escribe la pregunta…" style="margin-top:10px" oninput="App.setQ(${i},'text',this.value)">
+        ${extra}
+        <label class="row" style="gap:6px;font-size:12.5px;cursor:pointer;margin-top:8px"><input type="checkbox" ${q.required?"checked":""} onchange="App.setQ(${i},'required',this.checked)"> Obligatoria</label>
+      </div>`;
+    }).join("");
+  }
+
+  const addQuestion = (qtype) => {
+    editQuestions.push({ qtype: qtype || "single", section: "pre", text: "", required: false, randomize: false,
+      config: (qtype === "numeric") ? { min: 0, max: 10 } : { options: [] }, position: editQuestions.length });
+    renderQuestions();
+  };
+  const delQuestion = (i) => { editQuestions.splice(i, 1); renderQuestions(); };
+  const moveQuestion = (i, d) => {
+    const j = i + d; if (j < 0 || j >= editQuestions.length) return;
+    const t = editQuestions[i]; editQuestions[i] = editQuestions[j]; editQuestions[j] = t; renderQuestions();
+  };
+  const setQ = (i, key, val) => {
+    editQuestions[i][key] = val;
+    if (key === "qtype") {
+      // ajusta config por defecto al cambiar de tipo
+      if (val === "numeric") editQuestions[i].config = { min: 0, max: 10 };
+      else if (val === "open") editQuestions[i].config = {};
+      else if (!editQuestions[i].config || !editQuestions[i].config.options) editQuestions[i].config = { options: [] };
+      renderQuestions();
+    }
+  };
+  const setQOptions = (i, text) => {
+    const opts = text.split("\n").map((s) => s.trim()).filter(Boolean).map((line) => {
+      const anchor = /\|ancla\s*$/i.test(line);
+      const t = line.replace(/\s*\|ancla\s*$/i, "").trim();
+      return { id: t.toLowerCase().replace(/\s+/g, "_").slice(0, 24) || Math.random().toString(36).slice(2, 8), text: t, anchor };
+    });
+    editQuestions[i].config = Object.assign({}, editQuestions[i].config, { options: opts });
+  };
+  const setQNum = (i, key, val) => {
+    editQuestions[i].config = Object.assign({}, editQuestions[i].config, { [key]: val === "" ? null : +val });
+  };
 
   function renderProfile() {
     $("profile-list").innerHTML = editProfile.map((f, i) => {
@@ -260,14 +366,24 @@ const App = (() => {
       .map((a) => ({ name: a.name.trim(), categories: a.categories.filter((c) => c.trim()).map((c) => ({ name: c.trim() })) }))
       .filter((a) => a.name && a.categories.length >= 2);
     if (!$("f-name").value.trim()) return toast("Ponle nombre al estudio");
-    if (attributes.length < 2) return toast("Necesitas ≥2 atributos con ≥2 categorías");
+    const questions = editQuestions
+      .filter((q) => (q.text || "").trim())
+      .map((q, i) => ({
+        position: i, section: q.section || "pre", qtype: q.qtype || "single",
+        text: q.text.trim(), required: !!q.required, randomize: !!q.randomize,
+        config: q.config || {},
+      }));
+    if (editHasConjoint && attributes.length < 2) return toast("El conjoint necesita ≥2 atributos con ≥2 categorías");
+    if (!editHasConjoint && questions.length === 0) return toast("Agrega al menos una pregunta o activa el conjoint");
     const body = {
       name: $("f-name").value.trim(),
       num_respondents: +$("f-resp").value || 50,
       tasks_per_respondent: +$("f-tasks").value || 8,
       options_per_task: +$("f-opts").value || 3,
       attributes,
+      has_conjoint: editHasConjoint,
       profile_config: { fields: editProfile },
+      questions,
     };
     try {
       if (editing) await api("/api/studies/" + editing.id, { method: "PUT", body: JSON.stringify(body) });
@@ -344,31 +460,31 @@ const App = (() => {
         <button class="btn ghost" onclick="App.go('dashboard')">‹ Volver</button>
       </div></div>`;
 
-    // Si el estudio no tiene NINGUNA respuesta todavía.
-    const noneAtAll = (!R.segments || !R.segments.length) && R.total_choices === 0;
-    if (noneAtAll) {
-      el.innerHTML = head + `<div class="empty"><p>Aún no hay respuestas para este estudio.</p>
-        <p>Comparte el link de la encuesta para empezar a recopilar.</p>
-        <div class="share-link" style="max-width:520px;margin:14px auto;">${location.origin}/survey?study=${study.public_token}
-        <button class="btn soft sm" onclick="App.copyLink('${study.public_token}')">Copiar</button></div></div>`;
+    const anyResponses = (R.n_respondents || 0) > 0 || (R.total_choices || 0) > 0;
+
+    if (!anyResponses) {
+      if (R.applied_filter) {
+        el.innerHTML = head + segBar(R) + `<div class="empty"><p>No hay respuestas para este segmento.</p>
+          <p>Prueba con otro valor o quita el filtro.</p></div>`;
+      } else {
+        el.innerHTML = head + `<div class="empty"><p>Aún no hay respuestas para este estudio.</p>
+          <p>Comparte el link de la encuesta para empezar a recopilar.</p>
+          <div class="share-link" style="max-width:520px;margin:14px auto;">${location.origin}/survey?study=${study.public_token}
+          <button class="btn soft sm" onclick="App.copyLink('${study.public_token}')">Copiar</button></div></div>`;
+      }
       return;
     }
 
-    // Con filtro aplicado pero sin datos en ese segmento.
-    if (R.total_choices === 0) {
-      el.innerHTML = head + segBar(R) + `<div class="empty"><p>No hay respuestas para este segmento.</p>
-        <p>Prueba con otro valor o quita el filtro.</p></div>`;
-      return;
-    }
-
-    el.innerHTML = head + segBar(R) + `
-      <div class="stats">
-        <div class="stat"><div class="v">${R.n_responses}</div><div class="l">Encuestados</div></div>
+    const showConjoint = R.has_conjoint && (R.total_choices || 0) > 0;
+    const statsHTML = `<div class="stats">
+        <div class="stat"><div class="v">${R.n_respondents}</div><div class="l">Encuestados</div></div>
+        ${showConjoint ? `
         <div class="stat"><div class="v">${R.total_choices}</div><div class="l">Elecciones</div></div>
         <div class="stat"><div class="v">${R.attribute_count}</div><div class="l">Atributos</div></div>
-        <div class="stat"><div class="v">${R.combos.length}</div><div class="l">Combinaciones vistas</div></div>
-      </div>
-      ${R.applied_filter ? "" : `<div class="card">
+        <div class="stat"><div class="v">${R.combos.length}</div><div class="l">Combinaciones vistas</div></div>` : ""}
+      </div>`;
+
+    const operatorsHTML = R.applied_filter ? "" : `<div class="card">
         <div class="card-title">🧑‍💼 Operadores de campo</div>
         <p class="muted" style="font-size:12.5px">Genera un link por operador. Todas las respuestas caen en este mismo estudio, pero podrás saber quién capturó cada una.</p>
         <div class="row" style="margin:10px 0">
@@ -379,7 +495,9 @@ const App = (() => {
         ${(R.by_operator && R.by_operator.length) ? `
         <table style="margin-top:8px"><thead><tr><th>Operador</th><th>Entrevistas</th><th>Elecciones</th></tr></thead>
         <tbody>${R.by_operator.map((o) => `<tr><td>${esc(o.operator)}</td><td class="mono">${o.respondents}</td><td class="mono">${o.choices}</td></tr>`).join("")}</tbody></table>` : ""}
-      </div>`}
+      </div>`;
+
+    const conjointHTML = showConjoint ? `
       <div class="card">
         <div class="card-title">📊 Elección por atributo y categoría</div>
         <p class="muted" style="font-size:12.5px">El <b>%</b> suma 100% dentro de cada atributo. La <b>tasa</b> = elegida ÷ mostrada (ajustada por exposición).</p>
@@ -396,30 +514,82 @@ const App = (() => {
         <tbody>${R.combos.slice(0, 15).map((c, i) => `<tr class="${i === 0 ? "lead" : ""}"><td class="mono">${i + 1}</td>
           <td>${c.parts.map((p) => `<span class="chip">${esc(p.category_name)}</span>`).join("")}</td>
           <td class="mono">${c.shown}</td><td class="mono">${c.chosen}</td><td class="mono">${pct(c.share)}</td><td class="mono">${pct(c.win_rate)}</td></tr>`).join("")}</tbody></table>
-      </div>`;
+      </div>` : "";
 
-    const wrap = $("attr-charts");
-    if (wrap) {
-      const specs = R.by_attribute.map((a) => ({
-        name: a.attribute_name,
-        labels: a.categories.map((c) => c.category_name),
-        data: a.categories.map((c) => +(c.share * 100).toFixed(1)),
-        height: Math.max(150, a.categories.length * 46),
-      }));
-      wrap.innerHTML = specs.map((s, i) =>
-        `<div class="chart-box"><h4>${esc(s.name)}</h4><div class="chart-canvas" style="height:${s.height}px"><canvas data-ci="${i}"></canvas></div></div>`
-      ).join("");
-      requestAnimationFrame(() => {
-        specs.forEach((s, i) => {
-          const cv = wrap.querySelector(`canvas[data-ci="${i}"]`);
-          if (cv) charts.push(barChart(cv, s.labels, s.data, "#C8553D", s.height));
+    el.innerHTML = head + segBar(R) + statsHTML + operatorsHTML + conjointHTML + questionsHTML(R);
+
+    if (showConjoint) {
+      const wrap = $("attr-charts");
+      if (wrap) {
+        const specs = R.by_attribute.map((a) => ({
+          name: a.attribute_name,
+          labels: a.categories.map((c) => c.category_name),
+          data: a.categories.map((c) => +(c.share * 100).toFixed(1)),
+          height: Math.max(150, a.categories.length * 46),
+        }));
+        wrap.innerHTML = specs.map((s, i) =>
+          `<div class="chart-box"><h4>${esc(s.name)}</h4><div class="chart-canvas" style="height:${s.height}px"><canvas data-ci="${i}"></canvas></div></div>`
+        ).join("");
+        requestAnimationFrame(() => {
+          specs.forEach((s, i) => {
+            const cv = wrap.querySelector(`canvas[data-ci="${i}"]`);
+            if (cv) charts.push(barChart(cv, s.labels, s.data, "#C8553D", s.height));
+          });
+          const top = R.combos.slice(0, 8);
+          charts.push(barChart($("combo-chart"),
+            top.map((c) => c.label.length > 26 ? c.label.slice(0, 24) + "…" : c.label),
+            top.map((c) => +(c.share * 100).toFixed(1)), "#2E6B68", Math.max(170, Math.min(8, R.combos.length) * 46)));
         });
-        const top = R.combos.slice(0, 8);
-        charts.push(barChart($("combo-chart"),
-          top.map((c) => c.label.length > 26 ? c.label.slice(0, 24) + "…" : c.label),
-          top.map((c) => +(c.share * 100).toFixed(1)), "#2E6B68", Math.max(170, Math.min(8, R.combos.length) * 46)));
-      });
+      }
     }
+  }
+
+  function bar(pctFrac, color) {
+    const w = Math.max(0, Math.min(100, Math.round((pctFrac || 0) * 100)));
+    return `<div style="height:8px;background:#ECEAE5;border-radius:5px;overflow:hidden;margin-top:4px"><div style="height:100%;width:${w}%;background:${color || "#2E6B68"}"></div></div>`;
+  }
+
+  function questionsHTML(R) {
+    const qrs = R.question_results || [];
+    if (!qrs.length) return "";
+    const blocks = qrs.map((q) => {
+      let inner = "";
+      if (q.qtype === "open") {
+        const resp = q.responses || [];
+        inner = `<p class="muted" style="font-size:12.5px">${resp.length} respuesta(s) de texto.</p>
+          <div style="max-height:260px;overflow:auto;margin-top:6px">
+          ${resp.slice(0, 50).map((t) => `<div style="padding:7px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;font-size:13.5px">${esc(t)}</div>`).join("") || '<p class="muted">Sin respuestas.</p>'}
+          </div>`;
+      } else if (q.qtype === "numeric") {
+        const dist = q.dist || [];
+        const maxc = Math.max(1, ...dist.map((d) => d.count));
+        inner = `<div class="row" style="gap:24px;align-items:baseline;flex-wrap:wrap">
+            <div><span style="font-family:'Fraunces',serif;font-size:34px">${q.mean != null ? q.mean.toFixed(2) : "—"}</span> <span class="muted">promedio</span></div>
+            <div class="muted" style="font-size:13px">mín ${q.min ?? "—"} · máx ${q.max ?? "—"} · n=${q.count || 0}</div>
+          </div>
+          <div style="margin-top:10px">${dist.map((d) => `<div class="row" style="gap:10px;align-items:center;margin:3px 0">
+            <span class="mono" style="width:28px;text-align:right">${d.value}</span>
+            <div style="flex:1">${bar(d.count / maxc, "#2E6B68")}</div>
+            <span class="mono muted" style="width:34px">${d.count}</span></div>`).join("")}</div>`;
+      } else {
+        const opts = q.options || [];
+        inner = opts.map((o) => `<div style="margin:8px 0">
+            <div class="row" style="justify-content:space-between;font-size:13.5px"><span>${esc(o.text)}</span>
+              <span class="mono muted">${o.count} · ${pct(o.pct)}</span></div>
+            ${bar(o.pct, "#C8553D")}</div>`).join("");
+        if (q.multi) inner += `<p class="muted" style="font-size:11.5px;margin-top:4px">Opción múltiple: los % pueden sumar más de 100%.</p>`;
+      }
+      const tag = { open: "Abierta", single: "Opción única", multi: "Opción múltiple", likert: "Likert", numeric: "Numérica" }[q.qtype] || q.qtype;
+      return `<div class="card">
+        <div class="row" style="justify-content:space-between;align-items:baseline">
+          <div class="card-title" style="margin:0">${esc(q.text)}</div>
+          <span class="qtag">${tag} · ${q.section === "post" ? "post" : "pre"} · n=${q.n}</span>
+        </div>
+        <div style="margin-top:10px">${inner}</div>
+      </div>`;
+    }).join("");
+    return `<div class="card" style="background:transparent;border:none;box-shadow:none;padding:6px 2px">
+        <div class="card-title">📝 Cuestionario</div></div>` + blocks;
   }
 
   function rankRow(c, i, max) {
@@ -474,5 +644,6 @@ const App = (() => {
 
   return { setAuthMode, submitAuth, logout, go, del, copyLink, opLink, download,
     addAttr, delAttr, setAttrName, addCat, delCat, setCat, saveStudy,
-    setPF, setPFOptions, segField, segValue, segClear };
+    setPF, setPFOptions, segField, segValue, segClear,
+    toggleConjoint, addQuestion, delQuestion, moveQuestion, setQ, setQOptions, setQNum };
 })();

@@ -1,5 +1,6 @@
 import io
 import csv
+import json
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -48,6 +49,62 @@ def _segments(respondents):
     return out
 
 
+def _question_results(study, subset):
+    """Tabula cada pregunta estándar sobre el subconjunto de entrevistados."""
+    subset_ids = {r.id for r in subset}
+    # recopila respuestas por pregunta
+    by_q = {}
+    for r in subset:
+        for a in r.answers:
+            by_q.setdefault(a.question_id, []).append(a)
+    out = []
+    qs = sorted(study.questions, key=lambda x: (x.section != "pre", x.position))
+    for q in qs:
+        try:
+            cfg = json.loads(q.config) if q.config else {}
+        except Exception:
+            cfg = {}
+        answers = by_q.get(q.id, [])
+        n = len(answers)
+        item = {"id": q.id, "qtype": q.qtype, "text": q.text or "",
+                "section": q.section, "n": n}
+        if q.qtype == "open":
+            item["responses"] = [a.answer_text for a in answers if (a.answer_text or "").strip()]
+        elif q.qtype in ("single", "multi", "likert"):
+            counts = {}
+            for a in answers:
+                try:
+                    chosen = json.loads(a.answer_options) if a.answer_options else []
+                except Exception:
+                    chosen = []
+                for opt in chosen:
+                    counts[opt] = counts.get(opt, 0) + 1
+            # ordena según las opciones definidas (si existen), si no por frecuencia
+            defined = [o.get("text") if isinstance(o, dict) else o for o in (cfg.get("options") or [])]
+            ordered = [t for t in defined if t in counts] + [t for t in counts if t not in defined]
+            base = n if q.qtype != "multi" else max(1, n)
+            item["options"] = [{"text": t, "count": counts.get(t, 0),
+                                "pct": (counts.get(t, 0) / base if base else 0)} for t in (ordered or counts.keys())]
+            item["multi"] = (q.qtype == "multi")
+        elif q.qtype == "numeric":
+            nums = [a.answer_num for a in answers if a.answer_num is not None]
+            if nums:
+                item["mean"] = sum(nums) / len(nums)
+                item["min"] = min(nums)
+                item["max"] = max(nums)
+                item["count"] = len(nums)
+                # distribución por valor entero
+                dist = {}
+                for v in nums:
+                    k = round(v)
+                    dist[k] = dist.get(k, 0) + 1
+                item["dist"] = [{"value": k, "count": dist[k]} for k in sorted(dist)]
+            else:
+                item["mean"] = None; item["count"] = 0; item["dist"] = []
+        out.append(item)
+    return out
+
+
 def _results(study, db, seg_field=None, seg_value=None):
     respondents = _all_respondents(study, db)
     segments = _segments(respondents)
@@ -59,6 +116,11 @@ def _results(study, db, seg_field=None, seg_value=None):
     res = analytics.compute_results(study, subset)
     res["segments"] = segments
     res["applied_filter"] = applied
+    res["has_conjoint"] = bool(study.has_conjoint)
+    res["has_questions"] = len(study.questions) > 0
+    # total de entrevistados completados en el subconjunto (sirve para estudios solo-encuesta)
+    res["n_respondents"] = sum(1 for r in subset if r.completed_at is not None)
+    res["question_results"] = _question_results(study, [r for r in subset if r.completed_at is not None])
     return res
 
 
@@ -157,6 +219,47 @@ def export_xlsx(study_id: str, user: models.User = Depends(auth.get_current_user
     ws6.append(["Operador", "Entrevistas completadas", "Elecciones registradas"])
     for o in R.get("by_operator", []):
         ws6.append([o["operator"], o["respondents"], o["choices"]])
+
+    # ----- Cuestionario estándar -----
+    if study.questions:
+        qs = sorted(study.questions, key=lambda x: (x.section != "pre", x.position))
+        # Resumen por pregunta
+        wsq = wb.create_sheet("Cuestionario (resumen)")
+        for qr in R.get("question_results", []):
+            wsq.append([f'[{qr["qtype"]}] {qr["text"]}'])
+            if qr["qtype"] == "open":
+                wsq.append(["Respuestas abiertas:", qr.get("n", 0)])
+                for txt in qr.get("responses", []):
+                    wsq.append(["", txt])
+            elif qr["qtype"] in ("single", "multi", "likert"):
+                wsq.append(["Opción", "Conteo", "%"])
+                for o in qr.get("options", []):
+                    wsq.append([o["text"], o["count"], round(o["pct"] * 100, 1)])
+            elif qr["qtype"] == "numeric":
+                wsq.append(["Promedio", round(qr["mean"], 2) if qr.get("mean") is not None else ""])
+                wsq.append(["Mín", qr.get("min", ""), "Máx", qr.get("max", ""), "n", qr.get("count", 0)])
+            wsq.append([])
+
+        # Crudo: una fila por entrevistado, una columna por pregunta
+        wsr = wb.create_sheet("Cuestionario (crudo)")
+        headers = ["ID entrevistado", "Encuestador"] + [f"{q.text}" for q in qs]
+        wsr.append(headers)
+        for r in respondents:
+            if r.completed_at is None:
+                continue
+            amap = {}
+            for a in r.answers:
+                if a.qtype == "open":
+                    amap[a.question_id] = a.answer_text or ""
+                elif a.qtype == "numeric":
+                    amap[a.question_id] = a.answer_num if a.answer_num is not None else ""
+                else:
+                    try:
+                        opts = json.loads(a.answer_options) if a.answer_options else []
+                    except Exception:
+                        opts = []
+                    amap[a.question_id] = " | ".join(opts)
+            wsr.append([r.id, r.operator or ""] + [amap.get(q.id, "") for q in qs])
 
     bio = io.BytesIO()
     wb.save(bio)
